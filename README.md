@@ -1,6 +1,6 @@
 # Korean Law MCP Server & CLI
 
-법제처 Open API 기반 한국 법령 MCP 서버 + CLI. 58개 도구로 법령, 판례, 행정규칙, 자치법규, 법령해석례 등을 검색·조회·분석할 수 있다.
+법제처 Open API 기반 한국 법령 MCP 서버 + CLI. 64개 도구로 법령, 판례, 행정규칙, 자치법규, 법령해석례 등을 검색·조회·분석할 수 있다.
 
 [![MCP Compatible](https://img.shields.io/badge/MCP-1.26-blue)](https://modelcontextprotocol.io)
 [![CLI](https://img.shields.io/badge/CLI-korean--law-green)](#cli-사용법)
@@ -12,7 +12,7 @@
 - **MCP + CLI 동시 지원**: MCP 서버(Claude Desktop 등)와 CLI(터미널/스크립트) 모두 사용 가능
 - **법률 도메인 특화**: 약칭 자동 인식(`화관법` → `화학물질관리법`), 조문번호 변환(`제38조` ↔ `003800`), 3단 위임 구조 시각화
 - **별표/별지서식 본문 추출**: HWPX·HWP 파일을 자동 다운로드 → 텍스트/표를 Markdown으로 변환. PDF는 링크 반환
-- **58개 도구**: 법령·판례·행정규칙·자치법규·헌재결정·행정심판·조세심판·관세해석·법령용어 등 포괄
+- **64개 도구**: 법령·판례·행정규칙·자치법규·헌재결정·행정심판·조세심판·관세해석·법령용어 등 포괄
 - **캐시**: 검색 1시간, 조문 24시간 TTL
 
 ## 설치
@@ -73,7 +73,7 @@ npm install -g korean-law-mcp
 
 ## CLI 사용법
 
-MCP 클라이언트 없이 터미널에서 직접 58개 도구를 실행할 수 있다.
+MCP 클라이언트 없이 터미널에서 직접 64개 도구를 실행할 수 있다.
 
 ### CLI 실행
 
@@ -132,7 +132,7 @@ docker run -e LAW_OC=your-api-key -p 3000:3000 korean-law-mcp
 
 MCP 엔드포인트: `https://your-host:3000/mcp`
 
-## 도구 목록 (58개)
+## 도구 목록 (64개)
 
 ### 검색 (11개)
 
@@ -159,7 +159,7 @@ MCP 엔드포인트: `https://your-host:3000/mcp`
 | `get_ordinance` | 자치법규 전문 |
 | `get_precedent_text` | 판례 전문 |
 | `get_interpretation_text` | 법령해석례 전문 |
-| `get_batch_articles` | 여러 조문 일괄 조회 |
+| `get_batch_articles` | 여러 조문 일괄 조회 (`laws` 배열로 복수 법령 지원) |
 | `get_article_with_precedents` | 조문 + 관련 판례 |
 | `compare_old_new` | 신구법 대조 |
 | `get_three_tier` | 법률→시행령→시행규칙 3단 비교 |
@@ -214,10 +214,24 @@ MCP 엔드포인트: `https://your-host:3000/mcp`
 
 | 도구 | 설명 |
 |------|------|
-| `search_ai_law` | 자연어 지능형 검색 |
+| `search_ai_law` | 자연어 지능형 검색 (`lawTypes` 필터 지원) |
 | `search_english_law` / `get_english_law_text` | 영문법령 검색/조회 |
 | `search_historical_law` / `get_historical_law` | 연혁법령 검색/조회 |
 | `search_legal_terms` | 법령용어 사전 검색 |
+
+### 체인 도구 (7개)
+
+여러 도구를 자동 조합하여 복합 리서치를 한 번의 호출로 수행한다.
+
+| 도구 | 설명 |
+|------|------|
+| `chain_law_system` | 법체계 파악 (법령검색→3단비교→조문 일괄 조회) |
+| `chain_action_basis` | 처분/허가 근거 확인 (법체계→해석례→판례→행심 병렬) |
+| `chain_dispute_prep` | 불복/쟁송 대비 (판례+행심+전문결정례 병렬) |
+| `chain_amendment_track` | 개정 추적 (신구대조+조문이력) |
+| `chain_ordinance_compare` | 조례 비교 연구 (상위법→전국 조례 검색) |
+| `chain_full_research` | 종합 리서치 (AI검색→법령→판례→해석) |
+| `chain_procedure_detail` | 절차/비용/서식 (법체계→별표→시행규칙별표) |
 
 ## 사용 예시
 
@@ -246,7 +260,7 @@ MCP 엔드포인트: `https://your-host:3000/mcp`
 
 ## 문서
 
-- [docs/API.md](docs/API.md) - 58개 도구 레퍼런스
+- [docs/API.md](docs/API.md) - 64개 도구 레퍼런스
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - 시스템 설계
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) - 개발 가이드
 

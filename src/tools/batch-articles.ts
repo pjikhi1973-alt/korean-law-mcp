@@ -1,6 +1,6 @@
 /**
  * get_batch_articles Tool - 여러 조문 한번에 조회
- * 법령 전문을 가져온 뒤 여러 조문을 추출
+ * 단일 법령 또는 복수 법령의 조문을 일괄 조회
  */
 
 import { z } from "zod"
@@ -9,173 +9,224 @@ import { buildJO } from "../lib/law-parser.js"
 import { lawCache } from "../lib/cache.js"
 import { flattenContent, extractHangContent, cleanHtml } from "../lib/article-parser.js"
 import { truncateResponse } from "../lib/schemas.js"
+import type { ToolResponse } from "../lib/types.js"
 
-export const GetBatchArticlesSchema = z.object({
+const LawEntrySchema = z.object({
   mst: z.string().optional().describe("법령일련번호"),
   lawId: z.string().optional().describe("법령ID"),
-  articles: z.array(z.string()).describe("조문 번호 배열 (예: ['제38조', '제39조', '제40조'])"),
+  articles: z.array(z.string()).describe("조문 번호 배열 (예: ['제38조', '제39조'])"),
+})
+
+type LawEntry = z.infer<typeof LawEntrySchema>
+
+export const GetBatchArticlesSchema = z.object({
+  mst: z.string().optional().describe("법령일련번호 (단일 법령 조회 시)"),
+  lawId: z.string().optional().describe("법령ID (단일 법령 조회 시)"),
+  articles: z.array(z.string()).optional().describe("조문 번호 배열 (단일 법령 조회 시, 예: ['제38조', '제39조'])"),
   efYd: z.string().optional().describe("시행일자 (YYYYMMDD 형식)"),
-  apiKey: z.string().optional().describe("API 키")
-}).refine(data => data.mst || data.lawId, {
-  message: "mst 또는 lawId 중 하나는 필수입니다"
+  apiKey: z.string().optional().describe("API 키"),
+  laws: z.array(LawEntrySchema).optional().describe(
+    "복수 법령 조문 일괄 조회 (예: [{mst:'123', articles:['제1조','제2조']}, {lawId:'456', articles:['제3조']}])"
+  ),
+}).refine(data => data.laws || data.mst || data.lawId, {
+  message: "laws 배열 또는 mst/lawId 중 하나는 필수입니다"
 })
 
 export type GetBatchArticlesInput = z.infer<typeof GetBatchArticlesSchema>
 
+interface FetchResult {
+  text?: string
+  foundCount?: number
+  error?: string
+}
+
+/**
+ * 단일 법령에서 조문 추출
+ */
+async function fetchArticlesForLaw(
+  apiClient: LawApiClient,
+  lawReq: LawEntry,
+  efYd?: string,
+  apiKey?: string
+): Promise<FetchResult> {
+  const cacheKey = `lawtext:${lawReq.mst || lawReq.lawId}:full:${efYd || ''}`
+  let fullLawData: any
+
+  const cached = lawCache.get<any>(cacheKey)
+  if (cached) {
+    fullLawData = cached
+  } else {
+    const jsonText = await apiClient.getLawText({
+      mst: lawReq.mst,
+      lawId: lawReq.lawId,
+      efYd: efYd,
+      apiKey: apiKey,
+    })
+    fullLawData = JSON.parse(jsonText)
+    lawCache.set(cacheKey, fullLawData)
+  }
+
+  const lawData = fullLawData?.법령
+  if (!lawData) {
+    return { error: `법령 데이터를 찾을 수 없습니다 (${lawReq.mst || lawReq.lawId}).` }
+  }
+
+  const basicInfo = lawData.기본정보 || lawData
+  const lawName = basicInfo?.법령명_한글 || basicInfo?.법령명한글 || basicInfo?.법령명 || "알 수 없음"
+
+  // 조문 번호를 JO 코드로 변환
+  const joCodes = new Set<string>()
+  for (const article of lawReq.articles) {
+    try {
+      const joCode = buildJO(article)
+      joCodes.add(joCode)
+    } catch (e) {
+      return { error: `조문 번호 변환 실패 (${article}): ${e instanceof Error ? e.message : String(e)}` }
+    }
+  }
+
+  // 조문 추출
+  const rawUnits = lawData.조문?.조문단위
+  let articleUnits: any[] = []
+
+  if (Array.isArray(rawUnits)) {
+    articleUnits = rawUnits
+  } else if (rawUnits && typeof rawUnits === 'object') {
+    articleUnits = [rawUnits]
+  }
+
+  if (articleUnits.length === 0) {
+    return { error: `${lawName}: 조문 내용을 찾을 수 없습니다.` }
+  }
+
+  let resultText = `📜 ${lawName}\n`
+  let foundCount = 0
+
+  for (const unit of articleUnits) {
+    if (unit.조문여부 !== "조문") continue
+
+    const joNum = unit.조문번호 || ""
+    const joBranch = unit.조문가지번호 || ""
+    const unitJoCode = joNum.padStart(4, '0') + (joBranch || '00').padStart(2, '0')
+
+    if (!joCodes.has(unitJoCode)) continue
+
+    foundCount++
+    const joTitle = unit.조문제목 || ""
+
+    if (joNum) {
+      const displayNum = joBranch && joBranch !== "0" ? `${joNum}조의${joBranch}` : `${joNum}조`
+      resultText += `제${displayNum}`
+      if (joTitle) resultText += ` ${joTitle}`
+      resultText += `\n`
+    }
+
+    let mainContent = ""
+    const rawContent = unit.조문내용
+
+    if (rawContent) {
+      const contentStr = flattenContent(rawContent)
+      if (contentStr) {
+        const headerMatch = contentStr.match(/^(제\d+조(?:의\d+)?\s*(?:\([^)]+\))?)[\s\S]*/)
+        if (headerMatch) {
+          const bodyPart = contentStr.substring(headerMatch[1].length).trim()
+          mainContent = bodyPart || contentStr
+        } else {
+          mainContent = contentStr
+        }
+      }
+    }
+
+    let paraContent = ""
+    if (unit.항 && Array.isArray(unit.항)) {
+      paraContent = extractHangContent(unit.항)
+    }
+
+    let finalContent = ""
+    if (mainContent) {
+      finalContent = mainContent
+      if (paraContent) {
+        finalContent += "\n" + paraContent
+      }
+    } else {
+      finalContent = paraContent
+    }
+
+    if (finalContent) {
+      const cleanContent = cleanHtml(finalContent)
+      resultText += `${cleanContent}\n\n`
+    }
+  }
+
+  if (foundCount === 0) {
+    resultText += "요청한 조문을 찾을 수 없습니다.\n"
+  } else if (foundCount < lawReq.articles.length) {
+    resultText += `⚠️ ${lawReq.articles.length}개 중 ${foundCount}개 조문만 찾았습니다.\n`
+  }
+
+  return { text: resultText, foundCount }
+}
+
 export async function getBatchArticles(
   apiClient: LawApiClient,
   input: GetBatchArticlesInput
-): Promise<{ content: Array<{ type: string, text: string }>, isError?: boolean }> {
+): Promise<ToolResponse> {
   try {
-    // 법령 전문 조회 (캐싱 활용)
-    const cacheKey = `lawtext:${input.mst || input.lawId}:full:${input.efYd || ''}`
-    let fullLawData: any
-
-    const cached = lawCache.get<any>(cacheKey)
-    if (cached) {
-      fullLawData = cached
+    // 입력 정규화: laws 배열 또는 단일 법령 -> 통일된 배열
+    let lawRequests: LawEntry[]
+    if (input.laws && input.laws.length > 0) {
+      lawRequests = input.laws
     } else {
-      const jsonText = await apiClient.getLawText({
+      lawRequests = [{
         mst: input.mst,
         lawId: input.lawId,
-        efYd: input.efYd,
-        apiKey: input.apiKey
-      })
-      fullLawData = JSON.parse(jsonText)
-      lawCache.set(cacheKey, fullLawData)
+        articles: input.articles || [],
+      }]
     }
 
-    const lawData = fullLawData?.법령
-    if (!lawData) {
-      return {
-        content: [{
-          type: "text",
-          text: "법령 데이터를 찾을 수 없습니다."
-        }],
-        isError: true
+    // 각 법령별 조문 일괄 추출
+    const results: string[] = []
+    const errors: string[] = []
+
+    for (const lawReq of lawRequests) {
+      if (!lawReq.articles || lawReq.articles.length === 0) {
+        errors.push(`${lawReq.mst || lawReq.lawId}: articles 배열이 비어 있습니다.`)
+        continue
       }
-    }
-
-    const basicInfo = lawData.기본정보 || lawData
-    const lawName = basicInfo?.법령명_한글 || basicInfo?.법령명한글 || basicInfo?.법령명 || "알 수 없음"
-
-    // 조문 번호를 JO 코드로 변환
-    const joCodes = new Set<string>()
-    for (const article of input.articles) {
+      if (!lawReq.mst && !lawReq.lawId) {
+        errors.push(`법령 식별자(mst 또는 lawId)가 없습니다.`)
+        continue
+      }
       try {
-        const joCode = buildJO(article)
-        joCodes.add(joCode)
+        const result = await fetchArticlesForLaw(apiClient, lawReq, input.efYd, input.apiKey)
+        if (result.error) {
+          errors.push(result.error)
+        } else {
+          results.push(result.text!)
+        }
       } catch (e) {
-        return {
-          content: [{
-            type: "text",
-            text: `조문 번호 변환 실패 (${article}): ${e instanceof Error ? e.message : String(e)}`
-          }],
-          isError: true
-        }
+        errors.push(`${lawReq.mst || lawReq.lawId}: ${e instanceof Error ? e.message : String(e)}`)
       }
     }
 
-    // 조문 추출
-    const rawUnits = lawData.조문?.조문단위
-    let articleUnits: any[] = []
-
-    if (Array.isArray(rawUnits)) {
-      articleUnits = rawUnits
-    } else if (rawUnits && typeof rawUnits === 'object') {
-      articleUnits = [rawUnits]
+    let finalText = ""
+    if (results.length > 0) {
+      finalText = results.join("\n---\n\n")
     }
-
-    if (articleUnits.length === 0) {
-      return {
-        content: [{
-          type: "text",
-          text: "조문 내용을 찾을 수 없습니다."
-        }],
-        isError: true
-      }
+    if (errors.length > 0) {
+      if (finalText) finalText += "\n"
+      finalText += `⚠️ 오류:\n${errors.map(e => `  - ${e}`).join('\n')}`
     }
-
-    let resultText = `법령명: ${lawName}\n`
-    resultText += `조회 조문: ${input.articles.join(', ')}\n\n`
-
-    // 요청된 조문만 필터링
-    let foundCount = 0
-    for (const unit of articleUnits) {
-      if (unit.조문여부 !== "조문") continue
-
-      const joNum = unit.조문번호 || ""
-      const joBranch = unit.조문가지번호 || ""
-
-      // JO 코드 생성
-      const unitJoCode = joNum.padStart(4, '0') + (joBranch || '00').padStart(2, '0')
-
-      // 요청된 조문인지 확인
-      if (!joCodes.has(unitJoCode)) continue
-
-      foundCount++
-      const joTitle = unit.조문제목 || ""
-
-      // 조문 헤더 출력
-      if (joNum) {
-        const displayNum = joBranch && joBranch !== "0" ? `${joNum}조의${joBranch}` : `${joNum}조`
-        resultText += `제${displayNum}`
-        if (joTitle) resultText += ` ${joTitle}`
-        resultText += `\n`
-      }
-
-      // 조문 내용 추출
-      let mainContent = ""
-      const rawContent = unit.조문내용
-
-      if (rawContent) {
-        const contentStr = flattenContent(rawContent)
-        if (contentStr) {
-          const headerMatch = contentStr.match(/^(제\d+조(?:의\d+)?\s*(?:\([^)]+\))?)[\s\S]*/)
-          if (headerMatch) {
-            const bodyPart = contentStr.substring(headerMatch[1].length).trim()
-            mainContent = bodyPart || contentStr
-          } else {
-            mainContent = contentStr
-          }
-        }
-      }
-
-      // 항/호/목 내용 추출
-      let paraContent = ""
-      if (unit.항 && Array.isArray(unit.항)) {
-        paraContent = extractHangContent(unit.항)
-      }
-
-      // 본문 + 항/호/목 결합
-      let finalContent = ""
-      if (mainContent) {
-        finalContent = mainContent
-        if (paraContent) {
-          finalContent += "\n" + paraContent
-        }
-      } else {
-        finalContent = paraContent
-      }
-
-      // HTML 태그 제거 및 엔티티 변환
-      if (finalContent) {
-        const cleanContent = cleanHtml(finalContent)
-        resultText += `${cleanContent}\n\n`
-      }
-    }
-
-    if (foundCount === 0) {
-      resultText += "요청한 조문을 찾을 수 없습니다."
-    } else if (foundCount < input.articles.length) {
-      resultText += `\n⚠️ ${input.articles.length}개 중 ${foundCount}개 조문만 찾았습니다.`
+    if (!finalText) {
+      finalText = "조회할 조문이 없습니다."
     }
 
     return {
       content: [{
         type: "text",
-        text: truncateResponse(resultText)
-      }]
+        text: truncateResponse(finalText),
+      }],
+      isError: results.length === 0 && errors.length > 0,
     }
   } catch (error) {
     return {
@@ -183,7 +234,7 @@ export async function getBatchArticles(
         type: "text",
         text: `Error: ${error instanceof Error ? error.message : String(error)}`
       }],
-      isError: true
+      isError: true,
     }
   }
 }

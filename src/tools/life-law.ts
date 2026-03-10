@@ -10,6 +10,9 @@ export const searchAiLawSchema = z.object({
   ),
   display: z.number().min(1).max(100).default(20).describe("페이지당 결과 개수 (기본값: 20)"),
   page: z.number().min(1).default(1).describe("페이지 번호 (기본값: 1)"),
+  lawTypes: z.array(z.string()).optional().describe(
+    "법령종류 필터 (예: ['법률', '대통령령', '총리령,부령']). 지정 시 해당 종류만 반환."
+  ),
   apiKey: z.string().optional().describe("API 키"),
 });
 
@@ -41,7 +44,16 @@ export async function searchAiLaw(
 
     const data = result.aiSearch;
     const totalCount = parseInt(data.검색결과개수 || "0");
-    const items = data.items || [];
+    let items = data.items || [];
+
+    // lawTypes 필터 적용 (클라이언트 사이드)
+    if (args.lawTypes && args.lawTypes.length > 0 && items.length > 0) {
+      const typeSet = new Set(args.lawTypes.map((t: string) => t.trim()));
+      items = items.filter((item: any) => {
+        const kind = item.법령종류명 || "";
+        return typeSet.has(kind);
+      });
+    }
 
     if (totalCount === 0 || items.length === 0) {
       let errorMsg = "검색 결과가 없습니다.";
@@ -69,7 +81,9 @@ export async function searchAiLaw(
     };
     const searchTypeName = searchTypeNames[searchType];
 
-    let output = `🔍 지능형 법령검색 결과 (${searchTypeName}, ${totalCount}건):\n\n`;
+    const displayCount = args.lawTypes ? items.length : totalCount;
+    const filterNote = args.lawTypes ? ` [필터: ${args.lawTypes.join(', ')}]` : '';
+    let output = `🔍 지능형 법령검색 결과 (${searchTypeName}, ${displayCount}건${filterNote}):\n\n`;
 
     for (const item of items) {
       if (searchType === "0" || searchType === "2") {
