@@ -48,21 +48,60 @@ export class LawApiError extends Error {
 }
 
 /**
- * 도구 에러 응답 생성
+ * 도구 에러 응답 생성 -- 구조화된 포맷
+ *
+ * 출력 형식:
+ *   ❌ [에러코드] 메시지
+ *   🔧 도구: <toolName>
+ *   💡 제안: ...
  */
 export function formatToolError(error: unknown, context?: string): ToolResponse {
-  let message: string
+  let code: string
+  let msg: string
+  let suggestions: string[]
 
   if (error instanceof LawApiError) {
-    message = error.format()
+    code = error.code || ErrorCodes.API_ERROR
+    msg = error.message
+    suggestions = error.suggestions || []
   } else if (error instanceof Error) {
-    message = context ? `[${context}] ${error.message}` : error.message
+    // Zod validation 에러 감지
+    if (error.name === "ZodError" && Array.isArray((error as any).issues)) {
+      code = ErrorCodes.INVALID_PARAM
+      msg = (error as any).issues
+        .map((i: { path: string[]; message: string }) => `${i.path.join(".")}: ${i.message}`)
+        .join("; ")
+      suggestions = ["파라미터 형식과 필수 값을 확인하세요."]
+    } else {
+      code = ErrorCodes.API_ERROR
+      msg = error.message
+      suggestions = []
+    }
   } else {
-    message = context ? `[${context}] ${String(error)}` : String(error)
+    code = ErrorCodes.API_ERROR
+    msg = String(error)
+    suggestions = []
+  }
+
+  // 구조화된 텍스트 조립
+  const lines: string[] = []
+  lines.push(`❌ [${code}] ${msg}`)
+
+  if (context) {
+    lines.push(`🔧 도구: ${context}`)
+  }
+
+  if (suggestions.length > 0) {
+    lines.push("💡 제안:")
+    suggestions.forEach((s, i) => {
+      lines.push(`   ${i + 1}. ${s}`)
+    })
+  } else {
+    lines.push("💡 제안: (없음)")
   }
 
   return {
-    content: [{ type: "text", text: message }],
+    content: [{ type: "text", text: lines.join("\n") }],
     isError: true,
   }
 }

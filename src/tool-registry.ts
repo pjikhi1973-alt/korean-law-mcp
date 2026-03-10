@@ -48,6 +48,16 @@ import { getLegalTermKB, getLegalTermKBSchema, getLegalTermDetail, getLegalTermD
 import { searchFtcDecisions, searchFtcDecisionsSchema, getFtcDecisionText, getFtcDecisionTextSchema, searchPipcDecisions, searchPipcDecisionsSchema, getPipcDecisionText, getPipcDecisionTextSchema, searchNlrcDecisions, searchNlrcDecisionsSchema, getNlrcDecisionText, getNlrcDecisionTextSchema } from "./tools/committee-decisions.js"
 import { getHistoricalLaw, getHistoricalLawSchema, searchHistoricalLaw, searchHistoricalLawSchema } from "./tools/historical-law.js"
 import { getLawSystemTree, getLawSystemTreeSchema } from "./tools/law-system-tree.js"
+// Chain tool imports
+import {
+  chainLawSystem, chainLawSystemSchema,
+  chainActionBasis, chainActionBasisSchema,
+  chainDisputePrep, chainDisputePrepSchema,
+  chainAmendmentTrack, chainAmendmentTrackSchema,
+  chainOrdinanceCompare, chainOrdinanceCompareSchema,
+  chainFullResearch, chainFullResearchSchema,
+  chainProcedureDetail, chainProcedureDetailSchema,
+} from "./tools/chains.js"
 
 /**
  * 모든 MCP 도구 정의
@@ -356,7 +366,7 @@ export const allTools: McpTool[] = [
   // === 생활법령/AI검색 ===
   {
     name: "search_ai_law",
-    description: "[AI] 생활법령 AI 검색 (자연어 질문).",
+    description: "[AI] 생활법령 AI 검색 (자연어 질문). lawTypes로 법률/대통령령/총리령,부령 등 필터 가능. 예: search_ai_law(query='음주운전 처벌', lawTypes=['법률'])",
     schema: searchAiLawSchema,
     handler: searchAiLaw
   },
@@ -414,7 +424,7 @@ export const allTools: McpTool[] = [
   },
   {
     name: "get_batch_articles",
-    description: "[배치] 여러 조문 일괄 조회.",
+    description: "[배치] 여러 조문 일괄 조회. 단일 법령(mst+articles) 또는 복수 법령(laws 배열)을 한번에 조회. 예: laws=[{mst:'123',articles:['제1조','제2조']},{mst:'456',articles:['제3조']}]",
     schema: GetBatchArticlesSchema,
     handler: getBatchArticles
   },
@@ -424,10 +434,77 @@ export const allTools: McpTool[] = [
     schema: GetArticleWithPrecedentsSchema,
     handler: getArticleWithPrecedents
   },
+
+  // === 체인 도구 (다단계 자동 실행) ===
+  {
+    name: "chain_law_system",
+    description: "[체인] 법체계 파악 -- 법령 검색→3단비교(법률·시행령·시행규칙)→조문 조회를 한번에. 수수료/과태료 키워드 시 별표 자동 포함. 예: chain_law_system(query='관세법', articles=['제38조'])",
+    schema: chainLawSystemSchema,
+    handler: chainLawSystem
+  },
+  {
+    name: "chain_action_basis",
+    description: "[체인] 처분/허가 근거 확인 -- 법령체계→해석례→판례→행정심판을 한번에 조회. 예: chain_action_basis(query='건축허가 거부 근거')",
+    schema: chainActionBasisSchema,
+    handler: chainActionBasis
+  },
+  {
+    name: "chain_dispute_prep",
+    description: "[체인] 불복/쟁송 대비 -- 판례+행정심판+전문결정례(조세심판/노동위/개인정보위) 병렬 검색. 예: chain_dispute_prep(query='징계처분 감경', domain='labor')",
+    schema: chainDisputePrepSchema,
+    handler: chainDisputePrep
+  },
+  {
+    name: "chain_amendment_track",
+    description: "[체인] 개정 추적 -- 신구대조표+조문별 개정이력 자동 조회. 예: chain_amendment_track(query='지방세특례제한법')",
+    schema: chainAmendmentTrackSchema,
+    handler: chainAmendmentTrack
+  },
+  {
+    name: "chain_ordinance_compare",
+    description: "[체인] 조례 비교 연구 -- 상위법 위임체계 확인→전국 조례 검색→비교. 조례 제·개정 시 필수. 예: chain_ordinance_compare(query='주민자치회', parentLaw='지방자치법')",
+    schema: chainOrdinanceCompareSchema,
+    handler: chainOrdinanceCompare
+  },
+  {
+    name: "chain_full_research",
+    description: "[체인] 종합 리서치 -- AI검색→법령본문→판례→해석례 종합 조회. 자연어 질문에 최적. 예: chain_full_research(query='기간제 근로자 2년 초과 사용')",
+    schema: chainFullResearchSchema,
+    handler: chainFullResearch
+  },
+  {
+    name: "chain_procedure_detail",
+    description: "[체인] 절차/비용/서식 안내 -- 법령체계→별표(수수료/과태료)→서식(신청서) 자동 조회. 예: chain_procedure_detail(query='여권발급 절차 수수료')",
+    schema: chainProcedureDetailSchema,
+    handler: chainProcedureDetail
+  },
 ]
 
+/**
+ * ZodEffects(.refine(), .transform() 등)를 벗겨내고 내부 ZodObject를 반환
+ */
+function unwrapZodEffects(schema: unknown): unknown {
+  let current: any = schema
+  // ZodEffects 체인을 따라가며 innerType 추출 (최대 10단계)
+  for (let i = 0; i < 10; i++) {
+    if (current?._def?.typeName === "ZodEffects" && current._def.schema) {
+      // zod v3: _def.schema 에 내부 스키마 존재
+      current = current._def.schema
+    } else if (typeof current?.innerType === "function") {
+      // 일부 zod 버전에서는 innerType() 메서드로 접근
+      current = current.innerType()
+    } else {
+      break
+    }
+  }
+  return current
+}
+
 function toMcpInputSchema(schema: unknown) {
-  const rawSchema = zodToJsonSchema(schema as any, { $refStrategy: "none" }) as any
+  // .refine()이 적용된 스키마(ZodEffects)는 zodToJsonSchema가
+  // 내부 객체 구조를 제대로 노출하지 못할 수 있으므로 먼저 unwrap
+  const unwrapped = unwrapZodEffects(schema)
+  const rawSchema = zodToJsonSchema(unwrapped as any, { $refStrategy: "none" }) as any
 
   // 일부 커넥터는 $schema/$ref가 포함된 스키마를 축약 처리해 선택 파라미터를 누락시키므로
   // MCP에서 필요한 핵심 필드만 노출합니다.
