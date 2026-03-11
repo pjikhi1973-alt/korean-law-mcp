@@ -2,7 +2,7 @@
 
 /**
  * Korean Law CLI
- * MCP 서버와 동일한 58개 도구를 커맨드라인에서 직접 실행
+ * MCP 서버와 동일한 도구를 커맨드라인에서 직접 실행
  *
  * Usage:
  *   korean-law search_law --query "민법"
@@ -18,7 +18,7 @@ import { LawApiClient } from "./lib/api-client.js"
 import { allTools } from "./tool-registry.js"
 import type { McpTool } from "./lib/types.js"
 
-const VERSION = "1.7.0"
+const VERSION = "1.8.0"
 
 interface CliOption {
   name: string
@@ -98,7 +98,7 @@ function getCategory(tool: McpTool): string {
 function createProgram(): Command {
   const program = new Command()
     .name("korean-law")
-    .description("한국 법령 검색 CLI - 법제처 API 기반 58개 도구")
+    .description("한국 법령 검색 CLI - 법제처 API 기반")
     .version(VERSION)
 
   // ── list 명령 ──
@@ -185,7 +185,7 @@ function createProgram(): Command {
       console.log(`예시: korean-law ${tool.name} ${example}`)
     })
 
-  // ── 58개 도구를 동적으로 서브커맨드 등록 ──
+  // ── 도구를 동적으로 서브커맨드 등록 ──
   for (const tool of allTools) {
     const cmd = program
       .command(tool.name)

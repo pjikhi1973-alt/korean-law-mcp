@@ -1,13 +1,13 @@
 # CLAUDE.md
 
-Korean Law MCP Server - 법제처 API 기반 MCP 서버 (58개 도구)
+Korean Law MCP Server - 법제처 API 기반 MCP 서버 (64개 도구)
 
 ## Structure
 
 ```
 src/
 ├── index.ts              # 엔트리포인트 (55줄, STDIO/SSE 모드)
-├── tool-registry.ts      # 58개 도구 등록 (~470줄)
+├── tool-registry.ts      # 64개 도구 등록 (~470줄)
 ├── tools/                # 도구 구현 (각 파일 200줄 미만)
 ├── lib/
 │   ├── api-client.ts     # API 클라이언트
@@ -72,7 +72,7 @@ get_law_text(mst, jo="006300") → 제63조(휴직) 조회
 
 | 파일 | 역할 |
 |------|------|
-| `tool-registry.ts` | 58개 도구 정의 및 등록 |
+| `tool-registry.ts` | 64개 도구 정의 및 등록 |
 | `lib/fetch-with-retry.ts` | 30초 타임아웃, 3회 재시도 |
 | `lib/session-state.ts` | 멀티세션 API 키 격리 |
 | `lib/xml-parser.ts` | 6개 도메인별 XML 파서 |
@@ -80,6 +80,6 @@ get_law_text(mst, jo="006300") → 제63조(휴직) 조회
 ## Docs
 
 상세 정보는 별도 문서 참조:
-- [docs/API.md](docs/API.md) - 58개 도구 레퍼런스
+- [docs/API.md](docs/API.md) - 64개 도구 레퍼런스
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - 시스템 설계, 데이터 플로우
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) - 개발 가이드
