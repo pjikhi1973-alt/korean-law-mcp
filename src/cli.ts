@@ -249,6 +249,48 @@ async function executeNaturalQuery(
   }
 }
 
+/**
+ * 자연어 쿼리 JSON 출력 (top-level --json 플래그)
+ */
+async function executeNaturalQueryJson(
+  apiClient: LawApiClient,
+  query: string
+): Promise<void> {
+  const route = routeQuery(query)
+  try {
+    const result = await executeTool(apiClient, route.tool, route.params)
+
+    let pipelineResult: string | undefined
+    if (route.pipeline && route.pipeline.length > 0 && !result.isError) {
+      const firstOutput = result.content[0]?.text || ""
+      const mstMatch = firstOutput.match(/MST:\s*(\d+)/)
+      const lawIdMatch = firstOutput.match(/법령ID:\s*(\d+)/)
+      if (mstMatch || lawIdMatch) {
+        const pipeParams = { ...route.pipeline[0].params }
+        if (mstMatch) pipeParams.mst = mstMatch[1]
+        else if (lawIdMatch) pipeParams.lawId = lawIdMatch[1]
+        const pResult = await executeTool(apiClient, route.pipeline[0].tool, pipeParams)
+        pipelineResult = pResult.content.map(c => c.text).join("\n")
+      }
+    }
+
+    console.log(JSON.stringify({
+      query,
+      route: { tool: route.tool, reason: route.reason, params: route.params },
+      result: result.content.map(c => c.text).join("\n"),
+      pipelineResult,
+      isError: result.isError || false,
+    }, null, 2))
+  } catch (error) {
+    console.log(JSON.stringify({
+      query,
+      route: { tool: route.tool, reason: route.reason },
+      error: error instanceof Error ? error.message : String(error),
+    }, null, 2))
+    process.exit(1)
+  }
+}
+
 // ────────────────────────────────────────
 // Interactive REPL Mode
 // ────────────────────────────────────────
@@ -350,6 +392,16 @@ async function runInteractive(): Promise<void> {
     executing = false
     rl.resume()
     rl.prompt()
+  })
+
+  // Ctrl+C: 실행 중이면 중단 알림, 아니면 종료
+  rl.on("SIGINT", () => {
+    if (executing) {
+      console.log(fmt.yellow("\n  (Ctrl+C: 현재 쿼리 완료를 기다립니다. 강제 종료: Ctrl+C x2)"))
+    } else {
+      console.log(fmt.dim("\n종료합니다."))
+      rl.close()
+    }
   })
 
   rl.on("close", () => {
@@ -663,17 +715,20 @@ function createProgram(): Command {
 // ────────────────────────────────────────
 
 /** CLI 플래그를 쿼리 텍스트에서 분리 */
-function separateFlags(args: string[]): { queryArgs: string[]; verbose: boolean } {
+function separateFlags(args: string[]): { queryArgs: string[]; verbose: boolean; json: boolean } {
   const queryArgs: string[] = []
   let verbose = false
+  let json = false
   for (const arg of args) {
     if (arg === "--verbose" || arg === "-v") {
       verbose = true
+    } else if (arg === "--json") {
+      json = true
     } else {
       queryArgs.push(arg)
     }
   }
-  return { queryArgs, verbose }
+  return { queryArgs, verbose, json }
 }
 
 async function main() {
@@ -694,7 +749,7 @@ async function main() {
   const firstArg = args[0]
   if (!knownCommands.has(firstArg) && !firstArg.startsWith("-")) {
     // 플래그와 쿼리 분리
-    const { queryArgs, verbose } = separateFlags(args)
+    const { queryArgs, verbose, json } = separateFlags(args)
     const query = queryArgs.join(" ")
 
     if (!query) {
@@ -703,7 +758,12 @@ async function main() {
     }
 
     const apiClient = getApiClient()
-    await executeNaturalQuery(apiClient, query, verbose)
+
+    if (json) {
+      await executeNaturalQueryJson(apiClient, query)
+    } else {
+      await executeNaturalQuery(apiClient, query, verbose)
+    }
     return
   }
 

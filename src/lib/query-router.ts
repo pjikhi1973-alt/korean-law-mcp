@@ -348,7 +348,150 @@ const routePatterns: Pattern[] = [
     priority: 18,
   },
 
-  // ── 19. 지역명 시작 + 키워드 (조례 추정) ──
+  // ── 19. 관세 해석례 (일반 해석례보다 구체적 → 더 높은 우선순위) ──
+  {
+    name: "customs",
+    patterns: [
+      /관세\s*해석|관세청\s*(해석|질의|회신)|FTA\s*해석/,
+    ],
+    tool: "search_customs_interpretations",
+    extract: (query) => ({
+      query: query.replace(/관세청?|해석례?|질의|회신/g, "").replace(/\s+/g, " ").trim(),
+    }),
+    reason: "관세 해석 키워드 → 관세 해석례 검색",
+    priority: 9,
+  },
+
+  // ── 20. 공정위 결정문 ──
+  {
+    name: "ftc",
+    patterns: [
+      /공정위|공정거래\s*위원회?|시장지배|불공정\s*거래|담합/,
+    ],
+    tool: "search_ftc_decisions",
+    extract: (query) => ({
+      query: query.replace(/공정거래위원회?|공정위|결정문?/g, "").replace(/\s+/g, " ").trim(),
+    }),
+    reason: "공정위 키워드 → 공정위 결정문 검색",
+    priority: 10,
+  },
+
+  // ── 21. 개인정보위 결정문 ──
+  {
+    name: "pipc",
+    patterns: [
+      /개인정보\s*위|개인정보\s*보호\s*위원회?|개인정보\s*침해/,
+    ],
+    tool: "search_pipc_decisions",
+    extract: (query) => ({
+      query: query.replace(/개인정보보호위원회?|개인정보위|결정문?/g, "").replace(/\s+/g, " ").trim(),
+    }),
+    reason: "개인정보위 키워드 → 개인정보위 결정문 검색",
+    priority: 10,
+  },
+
+  // ── 22. 노동위 결정문 ──
+  {
+    name: "nlrc",
+    patterns: [
+      /노동\s*위원회?|부당\s*해고|부당\s*노동|노동위/,
+    ],
+    tool: "search_nlrc_decisions",
+    extract: (query) => ({
+      query: query.replace(/중앙노동위원회?|노동위|결정문?/g, "").replace(/\s+/g, " ").trim(),
+    }),
+    reason: "노동위 키워드 → 노동위 결정문 검색",
+    priority: 10,
+  },
+
+  // ── 23. 조례 비교 체인 (조례 단독(5)보다 우선) ──
+  {
+    name: "ordinance_compare",
+    patterns: [
+      /조례\s*비교|자치법규\s*비교|전국\s*조례/,
+    ],
+    tool: "chain_ordinance_compare",
+    extract: (query) => ({ query }),
+    reason: "조례 비교 키워드 → 조례비교 체인",
+    priority: 4,
+  },
+
+  // ── 24. AI 의미검색 (법령명 모를 때 — explicit_law(3)보다 우선) ──
+  {
+    name: "ai_search",
+    patterns: [
+      /생활\s*법령|AI\s*검색/,
+    ],
+    tool: "search_ai_law",
+    extract: (query) => ({
+      query: query.replace(/생활법령|AI검색/g, "").replace(/\s+/g, " ").trim() || query,
+    }),
+    reason: "AI/생활법령 키워드 → AI 의미검색",
+    priority: 2,
+  },
+
+  // ── 25. 일상용어 → 법률용어 (일반 용어검색(10)보다 구체적 → 우선) ──
+  {
+    name: "daily_term",
+    patterns: [
+      /법률?\s*용어로|일상\s*용어|쉬운\s*말|법적\s*표현/,
+    ],
+    tool: "get_daily_to_legal",
+    extract: (query) => ({
+      query: query.replace(/법률?용어로?|일상용어|쉬운말|법적표현/g, "").replace(/\s+/g, " ").trim(),
+    }),
+    reason: "일상→법률 용어 변환 키워드 → 용어 매핑",
+    priority: 9,
+  },
+
+  // ── 26. 법령 통계/최근 개정 ──
+  {
+    name: "statistics",
+    patterns: [
+      /최근\s*개정|법령\s*통계|개정\s*현황/,
+    ],
+    tool: "get_law_statistics",
+    extract: (query) => {
+      const daysMatch = query.match(/(\d+)\s*일/)
+      return { days: daysMatch ? parseInt(daysMatch[1], 10) : 30, count: 20 }
+    },
+    reason: "통계/최근개정 키워드 → 법령 통계",
+    priority: 9,
+  },
+
+  // ── 27. 법령 목차/체계 조회 ──
+  {
+    name: "law_tree",
+    patterns: [
+      /목차|편장절|체계도/,
+    ],
+    tool: "get_law_tree",
+    extract: (query) => {
+      const lawName = extractLawName(query)
+      if (!lawName) {
+        return { _fallback: true, query }
+      }
+      return { _searchQuery: lawName, _needsMst: true }
+    },
+    reason: "목차 키워드 → 법령 체계 조회",
+    priority: 10,
+  },
+
+  // ── 28. 통합검색 (명시적) ──
+  {
+    name: "search_all_explicit",
+    patterns: [
+      /통합\s*검색/,
+    ],
+    tool: "search_all",
+    extract: (query) => ({
+      query: query.replace(/통합검색/g, "").replace(/\s+/g, " ").trim(),
+    }),
+    reason: "통합검색 키워드 → 통합검색",
+    priority: 10,
+  },
+
+  // ── 29. 지역명 시작 + 키워드 (조례 추정) ──
   {
     name: "region_ordinance",
     patterns: [
@@ -360,11 +503,11 @@ const routePatterns: Pattern[] = [
     priority: 20,
   },
 
-  // ── 20. 명시적 법령명 (법, 령, 규칙으로 끝나는) ──
+  // ── 30. 명시적 법령명 (법, 령, 규칙으로 끝나는) ──
   // "등록면허세법" 같이 법명 자체에 다른 패턴 키워드가 포함된 경우
   // 법명 패턴이 우선해야 하므로 priority를 신고/등록(16)보다 높게 설정.
-  // "방법" 같은 일반 단어를 걸러내기 위해 부정적 lookbehind 사용 불가(가변 길이)하므로
-  // 블랙리스트로 필터링.
+  // "방법" 같은 일반 단어를 걸러내기 위해 블랙리스트로 필터링.
+  // 의도 키워드(목차, 최근, 통합검색 등)가 동반되면 _skip하여 다음 패턴에 위임.
   {
     name: "explicit_law",
     patterns: [
@@ -377,12 +520,16 @@ const routePatterns: Pattern[] = [
       // "방법", "변경법" 등 법령명이 아닌 일반 단어 블랙리스트
       const nonLawSuffixes = /^(방법|변경법|입법|사법|문법|용법|어법|수법|기법|활법|진법|심법|산법)$/
       if (nonLawSuffixes.test(q)) {
-        return { _fallback: true, query: q }
+        // 단독 비법령어 → 다음 패턴으로 (없으면 chain_full_research 폴백)
+        return { _skip: true }
       }
-      // 끝부분만 블랙리스트 체크 (복합어: "신고 방법", "변경 방법")
       const lastWord = q.split(/\s+/).pop() || ""
       if (nonLawSuffixes.test(lastWord)) {
-        return { _fallback: true, query: q }
+        return { _skip: true }
+      }
+      // 의도 키워드가 동반되면 이 패턴은 양보 → 더 구체적인 패턴이 처리
+      if (/목차|편장절|체계도|통합\s*검색|최근\s*개정|개정\s*현황|법령\s*통계|조례\s*비교/.test(q)) {
+        return { _skip: true }
       }
       return { query: q }
     },
@@ -419,6 +566,11 @@ export function routeQuery(query: string): RouteResult {
       if (match) {
         const params = pattern.extract(q, match)
 
+        // _skip 플래그: 이 패턴은 매칭되었으나 의도가 다름 → 다음 패턴으로 진행
+        if (params._skip) {
+          continue
+        }
+
         // _fallback 플래그: 법령명 없이 키워드만 → 종합 리서치
         if (params._fallback) {
           delete params._fallback
@@ -446,6 +598,9 @@ export function routeQuery(query: string): RouteResult {
           delete params._needsMst
           delete params._searchQuery
 
+          // 내부 플래그 제거 후 남은 파라미터를 파이프라인에 전달
+          const pipeParams = { ...params }
+
           return {
             tool: "search_law",
             params: { query: searchQuery },
@@ -453,7 +608,7 @@ export function routeQuery(query: string): RouteResult {
             pipeline: [
               {
                 tool: pattern.tool,
-                params: { jo: params.jo },
+                params: pipeParams,
               },
             ],
           }
