@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Korean Law MCP Server v2.0 - 법제처 API 기반 MCP 서버 (64개 도구) + 자연어 CLI
+Korean Law MCP Server v2.1 - 법제처 API 기반 MCP 서버 (64개 도구) + 자연어 CLI
 
 ## Structure
 
@@ -11,23 +11,24 @@ src/
 ├── tool-registry.ts      # 64개 도구 등록
 ├── tools/                # 도구 구현 (40개 파일, 각 200줄 미만)
 ├── lib/
-│   ├── api-client.ts     # API 클라이언트
+│   ├── api-client.ts     # API 클라이언트 (throwIfError/checkHtmlError 통일)
 │   ├── query-router.ts   # 자연어 → 도구 라우팅 엔진
 │   ├── fetch-with-retry.ts  # 타임아웃/재시도
 │   ├── session-state.ts  # 세션별 API 키 관리
 │   ├── xml-parser.ts     # 공통 XML 파싱
 │   ├── errors.ts         # 에러 표준화
-│   ├── schemas.ts        # 날짜/응답크기 검증
+│   ├── schemas.ts        # 날짜/응답크기 검증 (truncateResponse)
 │   ├── search-normalizer.ts  # 검색어 정규화 (LexDiff)
 │   ├── law-parser.ts     # JO 코드 변환 (LexDiff)
 │   ├── annex-file-parser.ts  # 별표 파일 파서 (HWPX/HWP/PDF)
-│   ├── article-parser.ts # 조문 파서
-│   ├── cache.ts          # LRU 캐시 (TTL)
+│   ├── pdf-parser.ts     # PDF 텍스트 추출 (pdfjs-dist 서버사이드)
+│   ├── article-parser.ts # 조문 파서 (항/호/목 단일객체 정규화)
+│   ├── cache.ts          # LRU 캐시 (TTL, 만료 우선 eviction)
 │   ├── three-tier-parser.ts  # 3단 비교 파서
 │   └── types.ts          # 공통 타입
 └── server/               # HTTP/SSE 서버 (Express)
-    ├── http-server.ts    # Streamable HTTP (MCP 표준)
-    └── sse-server.ts     # SSE 서버 (레거시)
+    ├── http-server.ts    # Streamable HTTP (MCP 표준, 100kb body limit)
+    └── sse-server.ts     # SSE 서버 (레거시, 세션 클린업)
 ```
 
 ## Commands
@@ -95,6 +96,10 @@ get_law_text(mst, jo="006300") → 제63조(휴직) 조회
 2. **파일 크기 200줄 미만**: 초과 시 `src/lib/`로 분리
 3. **Zod 스키마**: 모든 도구 입력에 Zod 검증 필수
 4. **도구 추가**: `tool-registry.ts`의 `allTools` 배열에 추가
+5. **truncateResponse 필수**: 모든 도구의 최종 출력에 `truncateResponse()` 적용 (50KB 제한)
+6. **단일 객체 정규화**: API 응답의 배열 필드가 단일 객체로 올 수 있음 — `Array.isArray(x) ? x : [x]` 패턴 사용
+7. **cleanHtml 재사용**: HTML 엔티티 디코딩은 `article-parser.ts`의 `cleanHtml()` 사용 (수동 디코딩 금지)
+8. **console.log/error 금지**: STDIO 모드에서 간섭 방지. 에러는 throw로 전파
 
 ## Key Files
 
@@ -106,7 +111,9 @@ get_law_text(mst, jo="006300") → 제63조(휴직) 조회
 | `lib/fetch-with-retry.ts` | 30초 타임아웃, 3회 재시도 |
 | `lib/session-state.ts` | 멀티세션 API 키 격리 |
 | `lib/xml-parser.ts` | 6개 도메인별 XML 파서 |
-| `lib/annex-file-parser.ts` | HWPX/HWP/PDF 별표 파싱 |
+| `lib/annex-file-parser.ts` | HWPX/HWP/PDF 별표 파싱 (매직바이트 감지) |
+| `lib/pdf-parser.ts` | PDF 텍스트 추출 (pdfjs-dist, 테이블 복원) |
+| `lib/article-parser.ts` | 조문 파서 (cleanHtml, extractHangContent) |
 
 ## Docs
 
