@@ -1,34 +1,17 @@
 /**
- * 별표 파일 파서 (HWPX / HWP / PDF 분기)
+ * 별표 파일 파서 — kordoc 위임
  *
- * - HWPX (신형): hwpx-parser.ts (manifest 멀티섹션, colSpan/rowSpan, 중첩 테이블)
- * - HWP (구형): hwp5-parser.ts (OLE2 직접 파싱, UTF-16LE 텍스트, 레코드 기반 테이블)
- * - PDF: pdf-parser.ts (pdfjs-dist 서버사이드 텍스트 추출)
+ * HWPX/HWP5/PDF 모두 kordoc 통합 파서에 위임.
+ * kordoc은 colAddr/rowAddr 기반 HWP5 셀 배치, PDF 라인+클러스터 이중 테이블 감지,
+ * ZIP bomb 방지, 깨진 ZIP 복구 등 강화된 파싱 기능을 제공.
  *
- * 참고: https://github.com/roboco-io/hwp2md
+ * @see https://github.com/chrisryugj/kordoc
  */
 
-import { parseHwpxDocument } from "./hwpx-parser.js"
-import { parseHwp5Document } from "./hwp5-parser.js"
+import { parse } from "kordoc"
+import type { ParseResult } from "kordoc"
 
-// ─── 매직바이트 감지 ─────────────────────────────────
-
-function isHwpxFile(buffer: ArrayBuffer): boolean {
-  const bytes = new Uint8Array(buffer.slice(0, 4))
-  return bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04
-}
-
-function isOldHwpFile(buffer: ArrayBuffer): boolean {
-  const bytes = new Uint8Array(buffer.slice(0, 4))
-  return bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0
-}
-
-function isPdfFile(buffer: ArrayBuffer): boolean {
-  const bytes = new Uint8Array(buffer.slice(0, 4))
-  return bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46
-}
-
-// ─── 공통 인터페이스 ─────────────────────────────────
+// ─── 기존 인터페이스 호환 ────────────────────────────
 
 export interface AnnexParseResult {
   success: boolean
@@ -44,70 +27,21 @@ export interface AnnexParseResult {
 // ─── 메인 엔트리 ─────────────────────────────────────
 
 export async function parseAnnexFile(buffer: ArrayBuffer): Promise<AnnexParseResult> {
-  if (isHwpxFile(buffer)) {
-    return parseHwpx(buffer)
-  }
-  if (isOldHwpFile(buffer)) {
-    return parseHwp(buffer)
-  }
-  if (isPdfFile(buffer)) {
-    return parsePdf(buffer)
-  }
-  return { success: false, fileType: "unknown", error: "지원하지 않는 파일 형식입니다." }
-}
+  const result: ParseResult = await parse(buffer)
 
-// ─── HWPX 파서 (hwpx-parser.ts 위임) ────────────────
-
-async function parseHwpx(buffer: ArrayBuffer): Promise<AnnexParseResult> {
-  try {
-    const markdown = await parseHwpxDocument(buffer)
-    return { success: true, fileType: "hwpx", markdown }
-  } catch (err) {
-    return { success: false, fileType: "hwpx", error: err instanceof Error ? err.message : "HWPX 파싱 실패" }
-  }
-}
-
-// ─── 구형 HWP 파서 (hwp5-parser.ts 위임) ────────────
-
-async function parseHwp(buffer: ArrayBuffer): Promise<AnnexParseResult> {
-  try {
-    const markdown = parseHwp5Document(Buffer.from(buffer))
-    return { success: true, fileType: "hwp", markdown }
-  } catch (err) {
-    return { success: false, fileType: "hwp", error: err instanceof Error ? err.message : "HWP 파싱 실패" }
-  }
-}
-
-// ─── PDF 파서 (pdf-parser.ts 위임) ──────────────────
-
-async function parsePdf(buffer: ArrayBuffer): Promise<AnnexParseResult> {
-  try {
-    const { parsePdfDocument } = await import("./pdf-parser.js")
-    const result = await parsePdfDocument(buffer)
-    if (result.isImageBased) {
-      return {
-        success: false,
-        fileType: "pdf",
-        isImageBased: true,
-        pageCount: result.pageCount,
-        error: result.error,
-      }
-    }
-    if (!result.success || !result.markdown) {
-      return {
-        success: false,
-        fileType: "pdf",
-        pageCount: result.pageCount,
-        error: result.error || "PDF 텍스트 추출 실패",
-      }
-    }
+  if (result.success) {
     return {
       success: true,
-      fileType: "pdf",
+      fileType: result.fileType,
       markdown: result.markdown,
-      pageCount: result.pageCount,
     }
-  } catch (err) {
-    return { success: false, fileType: "pdf", error: err instanceof Error ? err.message : "PDF 파싱 실패" }
+  }
+
+  return {
+    success: false,
+    fileType: result.fileType,
+    isImageBased: result.isImageBased,
+    pageCount: result.pageCount,
+    error: result.error,
   }
 }
