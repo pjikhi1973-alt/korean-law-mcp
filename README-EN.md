@@ -15,9 +15,27 @@
 
 ---
 
-## What's New in v3.0.2 — Unified Architecture + Setup Wizard
+## What's New in v3.1.4
 
-v2 structured 39 legal APIs into 89 MCP tools. v3 re-compresses them into **14 tools**.
+- **kordoc 2.2.4** — Document parsing engine upgrade. HTML `<table>` output for merged cells, markdownToHwpx formatting improvements, Form Auto-Fill support.
+
+<details>
+<summary>v3.1.0~v3.1.3 changes</summary>
+
+**v3.1.3** — Empty search result hints for 18 tools. Session cleanup interval reduced (30min→10min).
+
+**v3.1.2** — kordoc 2.2.1 update. GFM table special character escaping and pipe collision prevention.
+
+**v3.1.1** — kordoc 2.1→2.2 update.
+
+**v3.1.0** — Production hardening: 20 file fixes. truncateResponse 50KB limit applied to 17 tools, HTTP session limit (MAX_SESSIONS=100), CORS wildcard warning, parameter pollution defense, chain tool auth error propagation, SSE server dead code removal.
+
+</details>
+
+<details>
+<summary>v3.0.x changes</summary>
+
+v2 structured 41 legal APIs into 89 MCP tools. v3 re-compresses them into **14 tools**.
 
 | | Raw APIs | v2 | v3 |
 |---|:---:|:---:|:---:|
@@ -28,15 +46,10 @@ v2 structured 39 legal APIs into 89 MCP tools. v3 re-compresses them into **14 t
 
 **What changed:** 34 individual search/get tools for precedents, constitutional court, tax tribunal, FTC, etc. are now unified into 2 tools: `search_decisions(domain)` + `get_decision_text(domain)`, covering **17 domains** with a single `domain` parameter.
 
-**Why it matters:**
-- AI picks the right tool faster (14 vs 89 to choose from)
-- 82% less context consumed by tool schemas
-- No more lite/full profile confusion
-- All 17 decision domains accessible without `discover_tools`
-
-Other changes:
-- **kordoc 1.6 → 2.2.1** — Document parsing engine upgrade (XLSX/DOCX support, GFM table escaping)
+- **kordoc 1.6 → 2.2.4** — Document parsing engine upgrade (XLSX/DOCX support, security hardening, form filler)
 - **Bug fixes** — Admin appeal text retrieval, English law text retrieval
+
+</details>
 
 <details>
 <summary>v2.2.0</summary>
@@ -66,7 +79,7 @@ Other changes:
 
 South Korea has **1,600+ active laws**, **10,000+ administrative rules**, and a precedent system spanning Supreme Court, Constitutional Court, tax tribunals, and customs rulings. All of this lives behind a clunky government API with zero developer experience.
 
-This project wraps that entire legal system into **89 structured tools** that any AI assistant or script can call. Built by a Korean civil servant who got tired of manually searching [법제처](https://www.law.go.kr) for the hundredth time.
+This project wraps that entire legal system into **14 structured tools** that any AI assistant or script can call. Built by a Korean civil servant who got tired of manually searching [법제처](https://www.law.go.kr) for the hundredth time.
 
 ---
 
@@ -165,170 +178,26 @@ docker run -e LAW_OC=your-api-key -p 3000:3000 korean-law-mcp
 
 ---
 
-## Tool Categories (89 total)
+## Tool Structure (14 tools)
 
-### Search (11)
+v3 exposes only 14 tools. Specialized tools are accessible via `discover_tools` → `execute_tool`.
 
-| Tool | Description |
-|------|-------------|
-| `search_law` | Search statutes (auto-resolves abbreviations) |
-| `search_admin_rule` | Search administrative rules |
-| `search_ordinance` | Search local ordinances |
-| `search_precedents` | Search court precedents |
-| `search_interpretations` | Search legal interpretations |
-| `search_all` | Unified search across all categories |
-| `suggest_law_names` | Law name autocomplete |
-| `advanced_search` | Advanced search with date/keyword filters |
-| `get_law_history` | Law amendment history by date |
-| `get_annexes` | Retrieve annexes + extract HWPX/HWP to Markdown |
-| `parse_jo_code` | Article number ↔ JO code conversion |
-
-### Retrieve (9)
-
-| Tool | Description |
-|------|-------------|
-| `get_law_text` | Full statute text |
-| `get_admin_rule` | Full administrative rule |
-| `get_ordinance` | Full local ordinance |
-| `get_precedent_text` | Full precedent text |
-| `get_interpretation_text` | Full interpretation text |
-| `get_batch_articles` | Batch article retrieval (multiple laws) |
-| `get_article_with_precedents` | Article + related precedents |
-| `compare_old_new` | Old vs. new law comparison |
-| `get_three_tier` | Law → Decree → Rule 3-tier comparison |
-
-### Analyze (10)
-
-| Tool | Description |
-|------|-------------|
-| `compare_articles` | Cross-law article comparison |
-| `get_law_tree` | Delegation structure tree |
-| `get_article_history` | Article amendment history |
-| `summarize_precedent` | Precedent summary |
-| `extract_precedent_keywords` | Precedent keyword extraction |
-| `find_similar_precedents` | Similar precedent search |
-| `get_law_statistics` | Law statistics |
-| `parse_article_links` | Parse in-text legal references |
-| `get_external_links` | Generate external links |
-| `analyze_document` | Document analysis with legal context |
-
-### Specialized: Tax & Customs (4)
-
-| Tool | Description |
-|------|-------------|
-| `search_tax_tribunal_decisions` | Tax tribunal decision search |
-| `get_tax_tribunal_decision_text` | Tax tribunal decision full text |
-| `search_customs_interpretations` | Customs interpretation search |
-| `get_customs_interpretation_text` | Customs interpretation full text |
-
-### Specialized: Constitutional & Admin Appeals (4)
-
-| Tool | Description |
-|------|-------------|
-| `search_constitutional_decisions` | Constitutional Court decision search |
-| `get_constitutional_decision_text` | Constitutional Court decision full text |
-| `search_admin_appeals` | Administrative appeal decision search |
-| `get_admin_appeal_text` | Administrative appeal decision full text |
-
-### Specialized: Committee Decisions (8)
-
-| Tool | Description |
-|------|-------------|
-| `search_ftc_decisions` | Fair Trade Commission decision search |
-| `get_ftc_decision_text` | Fair Trade Commission decision full text |
-| `search_pipc_decisions` | Privacy Commission decision search |
-| `get_pipc_decision_text` | Privacy Commission decision full text |
-| `search_nlrc_decisions` | Labor Relations Commission decision search |
-| `get_nlrc_decision_text` | Labor Relations Commission decision full text |
-| `search_acr_decisions` | Board of Audit & Inspection decision search |
-| `get_acr_decision_text` | Board of Audit & Inspection decision full text |
-
-### Special Admin Appeals (4)
-
-| Tool | Description |
-|------|-------------|
-| `search_acr_special_appeals` | Special administrative appeal search |
-| `get_acr_special_appeal_text` | Special administrative appeal full text |
-| `search_appeal_review_decisions` | Appeal review decision search |
-| `get_appeal_review_decision_text` | Appeal review decision full text |
-
-### Law-Ordinance Linkage (4)
-
-| Tool | Description |
-|------|-------------|
-| `get_linked_ordinances` | Find ordinances linked to a law |
-| `get_linked_ordinance_articles` | Get linked ordinance article details |
-| `get_delegated_laws` | Find laws delegating to ordinances |
-| `get_linked_laws_from_ordinance` | Find parent laws from an ordinance |
-
-### Treaties (2)
-
-| Tool | Description |
-|------|-------------|
-| `search_treaties` | Treaty search |
-| `get_treaty_text` | Treaty full text |
-
-### Institutional Rules (6)
-
-| Tool | Description |
-|------|-------------|
-| `search_school_rules` | School rule search |
-| `get_school_rule_text` | School rule full text |
-| `search_public_corp_rules` | Public corporation rule search |
-| `get_public_corp_rule_text` | Public corporation rule full text |
-| `search_public_institution_rules` | Public institution rule search |
-| `get_public_institution_rule_text` | Public institution rule full text |
-
-### Knowledge Base (7)
-
-| Tool | Description |
-|------|-------------|
-| `get_legal_term_kb` | Legal terminology search |
-| `get_legal_term_detail` | Term definition |
-| `get_daily_term` | Everyday language search |
-| `get_daily_to_legal` | Everyday → legal term mapping |
-| `get_legal_to_daily` | Legal → everyday term mapping |
-| `get_term_articles` | Articles using a term |
-| `get_related_laws` | Related laws |
-
-### Chain Tools (8)
-
-Composite research workflows — multiple tools in a single call.
-
-| Tool | Workflow |
-|------|----------|
-| `chain_law_system` | Search → 3-tier comparison → batch articles |
-| `chain_action_basis` | Law system → interpretations → precedents → appeals |
-| `chain_dispute_prep` | Precedents + appeals + specialized decisions |
-| `chain_amendment_track` | Old/new comparison + article history |
-| `chain_ordinance_compare` | Parent law → nationwide ordinance search |
-| `chain_full_research` | AI search → statutes → precedents → interpretations |
-| `chain_procedure_detail` | Law system → annexes → enforcement rule annexes |
-| `chain_document_review` | Document analysis → related laws → precedents |
-
-### Meta Tools (2)
-
-Discover and execute any of the 77 specialized tools dynamically.
-
-| Tool | Description |
-|------|-------------|
-| `discover_tools` | Search available tools by intent/category |
-| `execute_tool` | Execute a tool found via discover_tools |
-
-### Other (10)
-
-| Tool | Description |
-|------|-------------|
-| `search_ai_law` | Natural language AI search |
-| `search_english_law` | English law search |
-| `get_english_law_text` | English law full text |
-| `search_historical_law` | Historical law search |
-| `get_historical_law` | Historical law full text |
-| `search_legal_terms` | Legal dictionary search |
-| `get_law_system_tree` | Law system tree visualization |
-| `get_law_abbreviations` | Law abbreviation list |
-| `get_article_detail` | Single article detail retrieval |
-| `compare_admin_rule_old_new` | Admin rule old vs. new comparison |
+| Category | Tool | Description |
+|----------|------|-------------|
+| **Chain** (8) | `chain_full_research` | Comprehensive research (AI search → statutes → precedents → interpretations) |
+| | `chain_law_system` | Legal system analysis (3-tier comparison, delegation structure) |
+| | `chain_action_basis` | Administrative action basis (permits, approvals, dispositions) |
+| | `chain_dispute_prep` | Dispute preparation (appeals, litigation, tribunals) |
+| | `chain_amendment_track` | Amendment tracking (old/new comparison, history) |
+| | `chain_ordinance_compare` | Ordinance comparison (parent law → nationwide ordinances) |
+| | `chain_procedure_detail` | Procedure/cost/form guide |
+| | `chain_document_review` | Contract/terms risk analysis |
+| **Law** (2) | `search_law` | Search statutes → get lawId, MST |
+| | `get_law_text` | Full article text retrieval |
+| **Unified** (2) | `search_decisions` | **17 domain** unified search (precedents, constitutional court, tax tribunal, FTC, NLRC, customs, interpretations, admin appeals, PIPC, ACR, appeal review, school rules, public corps, public institutions, treaties, English law) |
+| | `get_decision_text` | **17 domain** full text retrieval |
+| **Meta** (2) | `discover_tools` | Search specialized tools (terms, annexes, history, comparison, etc.) |
+| | `execute_tool` | Execute discovered specialized tool |
 
 ---
 
@@ -356,7 +225,7 @@ User: "산업안전보건법 별표1 내용"
 - **MCP + CLI** — Use from Claude Desktop or from your terminal
 - **17 Decision Domains** — `search_decisions` covers precedents, constitutional court, tax tribunal, FTC, NLRC, customs, and 11 more domains in one tool
 - **Korean Law Intelligence** — Auto-resolves abbreviations (`화관법` → `화학물질관리법`), converts article numbers (`제38조` ↔ `003800`), visualizes 3-tier delegation
-- **Annex Extraction** — Downloads HWPX/HWP/PDF/XLSX/DOCX annexes and converts to Markdown ([kordoc](https://github.com/chrisryugj/kordoc) engine)
+- **Annex Extraction** — Downloads HWPX/HWP/PDF/XLSX/DOCX annexes and converts to Markdown ([kordoc](https://github.com/chrisryugj/kordoc) v2.2.4 engine)
 - **8 Chain Tools** — Composite research workflows in a single call (e.g. `chain_full_research`: AI search → statutes → precedents → interpretations)
 - **Caching** — 1-hour search cache, 24-hour article cache
 - **Remote Endpoint** — Use without installation via `https://korean-law-mcp.fly.dev/mcp`
@@ -374,7 +243,7 @@ User: "산업안전보건법 별표1 내용"
 
 ## Documentation
 
-- [docs/API.md](docs/API.md) — 89-tool reference
+- [docs/API.md](docs/API.md) — Tool reference
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System design
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — Development guide
 
